@@ -1,12 +1,12 @@
+from dotenv import load_dotenv
+from queue import Queue
+from threading import Thread
 from langchain.chat_models import ChatOpenAI
 from langchain.prompts import ChatPromptTemplate
 from langchain.chains import LLMChain
 from langchain.callbacks.base import BaseCallbackHandler
-from dotenv import load_dotenv
-from queue import Queue
 
 load_dotenv()
-
 
 queue = Queue()
 
@@ -14,6 +14,12 @@ queue = Queue()
 class StreamingHandler(BaseCallbackHandler):
     def on_llm_new_token(self, token, **kwargs):
         queue.put(token)
+
+    def on_llm_end(self, response, **kwargs):
+        queue.put(None)
+
+    def on_llm_error(self, error, **kwargs):
+        queue.put(None)
 
 
 # kwargs are overridden by call method (i.e. "chat(...) or chat.invoke(...), or chat.stream(...) with streaming")
@@ -24,9 +30,15 @@ prompt = ChatPromptTemplate.from_messages([("human", "{content}")])
 
 class StreamingChain(LLMChain):
     def stream(self, input):
-        self(input)
+        def task():
+            self(input)
+
+        Thread(target=task).start()
+
         while True:
             token = queue.get()
+            if token is None:
+                break
             yield token
 
 
